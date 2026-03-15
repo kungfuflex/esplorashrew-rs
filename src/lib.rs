@@ -13,21 +13,21 @@
 //!
 //! # View Functions (Esplora API)
 //!
-//! | View Function           | Esplora Endpoint              |
-//! |------------------------|-------------------------------|
-//! | `view_tx`              | `GET /tx/:txid`               |
-//! | `view_tx_hex`          | `GET /tx/:txid/hex`           |
-//! | `view_tx_raw`          | `GET /tx/:txid/raw`           |
-//! | `view_tx_status`       | `GET /tx/:txid/status`        |
-//! | `view_tx_outspend`     | `GET /tx/:txid/outspend/:vout`|
-//! | `view_block`           | `GET /block/:hash`            |
-//! | `view_block_status`    | `GET /block/:hash/status`     |
-//! | `view_block_txids`     | `GET /block/:hash/txids`      |
-//! | `view_block_header`    | `GET /block/:hash/header`     |
-//! | `view_block_height`    | `GET /block-height/:height`   |
-//! | `view_tip_height`      | `GET /blocks/tip/height`      |
-//! | `view_tip_hash`        | `GET /blocks/tip/hash`        |
-//! | `view_utxos_by_scripthash` | `GET /scripthash/:hash/utxo` |
+//! | View Function        | Esplora Endpoint              |
+//! |---------------------|-------------------------------|
+//! | `tx`                | `GET /tx/:txid`               |
+//! | `txhex`             | `GET /tx/:txid/hex`           |
+//! | `txraw`             | `GET /tx/:txid/raw`           |
+//! | `txstatus`          | `GET /tx/:txid/status`        |
+//! | `txoutspend`        | `GET /tx/:txid/outspend/:vout`|
+//! | `block`             | `GET /block/:hash`            |
+//! | `blockstatus`       | `GET /block/:hash/status`     |
+//! | `blocktxids`        | `GET /block/:hash/txids`      |
+//! | `blockheader`       | `GET /block/:hash/header`     |
+//! | `blockheight`       | `GET /block-height/:height`   |
+//! | `tipheight`         | `GET /blocks/tip/height`      |
+//! | `tiphash`           | `GET /blocks/tip/hash`        |
+//! | `utxosbyscripthash` | `GET /scripthash/:hash/utxo`  |
 
 mod block;
 mod host;

@@ -14,19 +14,19 @@ This crate compiles to `wasm32-unknown-unknown` and implements the metashrew ind
 
 | View Function | Esplora Endpoint | Description |
 |---|---|---|
-| `view_tx` | `GET /tx/:txid` | Full transaction details |
-| `view_tx_hex` | `GET /tx/:txid/hex` | Hex-encoded raw transaction |
-| `view_tx_raw` | `GET /tx/:txid/raw` | Raw transaction bytes |
-| `view_tx_status` | `GET /tx/:txid/status` | Confirmation status |
-| `view_tx_outspend` | `GET /tx/:txid/outspend/:vout` | Output spending status |
-| `view_block` | `GET /block/:hash` | Block metadata |
-| `view_block_status` | `GET /block/:hash/status` | Block chain status |
-| `view_block_txids` | `GET /block/:hash/txids` | Transaction IDs in block |
-| `view_block_header` | `GET /block/:hash/header` | Block header hex |
-| `view_block_height` | `GET /block-height/:height` | Block hash at height |
-| `view_tip_height` | `GET /blocks/tip/height` | Current chain tip height |
-| `view_tip_hash` | `GET /blocks/tip/hash` | Current chain tip hash |
-| `view_utxos_by_scripthash` | `GET /scripthash/:hash/utxo` | UTXOs by script hash |
+| `tx` | `GET /tx/:txid` | Full transaction details |
+| `txhex` | `GET /tx/:txid/hex` | Hex-encoded raw transaction |
+| `txraw` | `GET /tx/:txid/raw` | Raw transaction bytes |
+| `txstatus` | `GET /tx/:txid/status` | Confirmation status |
+| `txoutspend` | `GET /tx/:txid/outspend/:vout` | Output spending status |
+| `block` | `GET /block/:hash` | Block metadata |
+| `blockstatus` | `GET /block/:hash/status` | Block chain status |
+| `blocktxids` | `GET /block/:hash/txids` | Transaction IDs in block |
+| `blockheader` | `GET /block/:hash/header` | Block header hex |
+| `blockheight` | `GET /block-height/:height` | Block hash at height |
+| `tipheight` | `GET /blocks/tip/height` | Current chain tip height |
+| `tiphash` | `GET /blocks/tip/hash` | Current chain tip hash |
+| `utxosbyscripthash` | `GET /scripthash/:hash/utxo` | UTXOs by script hash |
 
 ## Building
 
@@ -50,8 +50,8 @@ qubitcoind -loadindexer=esplora:~/.local/qubitcoin/indexers/esplora
 
 # Query via RPC
 qubitcoin-cli secondaryheight esplora
-qubitcoin-cli secondaryview esplora view_tip_height ""
-qubitcoin-cli secondaryview esplora view_block_height "$(printf '%s' '100' | xxd -p)"
+qubitcoin-cli secondaryview esplora tipheight ""
+qubitcoin-cli secondaryview esplora blockheight "$(printf '%s' '100' | xxd -p)"
 ```
 
 ## Architecture

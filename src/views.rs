@@ -4,8 +4,7 @@
 //! Input is provided via `__host_len`/`__load_input`, and the result is
 //! returned as a pointer to an ArrayBuffer.
 //!
-//! The HTTP routing (mapping Esplora REST paths to these view functions)
-//! is done by a thin proxy layer outside the WASM module.
+//! Function naming follows metashrew convention: all lowercase, single word.
 
 use crate::block::{self, to_hex, to_hex_rev};
 use crate::host;
@@ -54,14 +53,14 @@ fn decode_hash(hex: &str) -> Option<[u8; 32]> {
 }
 
 // =========================================================================
-// View functions — each is exported as a WASM function
+// View functions — metashrew style: all lowercase, single word
 // =========================================================================
 
 /// GET /tx/:txid
 /// Input: txid hex string
 /// Returns: JSON transaction object
 #[no_mangle]
-pub extern "C" fn view_tx() -> *const u8 {
+pub extern "C" fn tx() -> *const u8 {
     let txid_hex = input_string();
     let txid = match decode_hash(&txid_hex) {
         Some(h) => h,
@@ -80,7 +79,6 @@ pub extern "C" fn view_tx() -> *const u8 {
 
     // Look up raw tx for full details.
     let raw = host::get(&keys::tx_raw_key(&txid)).unwrap_or_default();
-    let raw_hex: String = raw.iter().map(|b| format!("{:02x}", b)).collect();
 
     // Parse the raw tx for vin/vout details.
     let (parsed_tx, _) = block::parse_transaction(&raw);
@@ -103,7 +101,7 @@ pub extern "C" fn view_tx() -> *const u8 {
         .outputs
         .iter()
         .enumerate()
-        .map(|(n, out)| {
+        .map(|(_, out)| {
             serde_json::json!({
                 "scriptpubkey": to_hex(&out.script_pubkey),
                 "value": out.value,
@@ -135,7 +133,7 @@ pub extern "C" fn view_tx() -> *const u8 {
 /// Input: txid hex string
 /// Returns: hex-encoded raw transaction
 #[no_mangle]
-pub extern "C" fn view_tx_hex() -> *const u8 {
+pub extern "C" fn txhex() -> *const u8 {
     let txid_hex = input_string();
     let txid = match decode_hash(&txid_hex) {
         Some(h) => h,
@@ -154,7 +152,7 @@ pub extern "C" fn view_tx_hex() -> *const u8 {
 /// Input: txid hex string
 /// Returns: raw transaction bytes
 #[no_mangle]
-pub extern "C" fn view_tx_raw() -> *const u8 {
+pub extern "C" fn txraw() -> *const u8 {
     let txid_hex = input_string();
     let txid = match decode_hash(&txid_hex) {
         Some(h) => h,
@@ -170,7 +168,7 @@ pub extern "C" fn view_tx_raw() -> *const u8 {
 /// Input: txid hex string
 /// Returns: JSON confirmation status
 #[no_mangle]
-pub extern "C" fn view_tx_status() -> *const u8 {
+pub extern "C" fn txstatus() -> *const u8 {
     let txid_hex = input_string();
     let txid = match decode_hash(&txid_hex) {
         Some(h) => h,
@@ -197,7 +195,7 @@ pub extern "C" fn view_tx_status() -> *const u8 {
 /// Input: JSON {"txid": "...", "vout": N}
 /// Returns: JSON spending status
 #[no_mangle]
-pub extern "C" fn view_tx_outspend() -> *const u8 {
+pub extern "C" fn txoutspend() -> *const u8 {
     let input = input_string();
     let params: serde_json::Value = match serde_json::from_str(&input) {
         Ok(v) => v,
@@ -245,7 +243,7 @@ pub extern "C" fn view_tx_outspend() -> *const u8 {
 /// Input: block hash hex string
 /// Returns: JSON block metadata
 #[no_mangle]
-pub extern "C" fn view_block() -> *const u8 {
+pub extern "C" fn block() -> *const u8 {
     let hash_hex = input_string();
     let hash = match decode_hash(&hash_hex) {
         Some(h) => h,
@@ -268,7 +266,7 @@ pub extern "C" fn view_block() -> *const u8 {
 /// Input: block hash hex string
 /// Returns: JSON block status
 #[no_mangle]
-pub extern "C" fn view_block_status() -> *const u8 {
+pub extern "C" fn blockstatus() -> *const u8 {
     let hash_hex = input_string();
     let hash = match decode_hash(&hash_hex) {
         Some(h) => h,
@@ -305,7 +303,7 @@ pub extern "C" fn view_block_status() -> *const u8 {
 /// Input: block hash hex string
 /// Returns: JSON array of txid strings
 #[no_mangle]
-pub extern "C" fn view_block_txids() -> *const u8 {
+pub extern "C" fn blocktxids() -> *const u8 {
     let hash_hex = input_string();
     let hash = match decode_hash(&hash_hex) {
         Some(h) => h,
@@ -341,7 +339,7 @@ pub extern "C" fn view_block_txids() -> *const u8 {
 /// Input: block hash hex string
 /// Returns: hex-encoded 80-byte block header
 #[no_mangle]
-pub extern "C" fn view_block_header() -> *const u8 {
+pub extern "C" fn blockheader() -> *const u8 {
     // For the header we'd need to store the raw header.
     // For now, return the block hash as a placeholder.
     let hash_hex = input_string();
@@ -352,7 +350,7 @@ pub extern "C" fn view_block_header() -> *const u8 {
 /// Input: height as decimal string
 /// Returns: block hash hex string
 #[no_mangle]
-pub extern "C" fn view_block_height() -> *const u8 {
+pub extern "C" fn blockheight() -> *const u8 {
     let input = input_string();
     let height: u32 = match input.trim().parse() {
         Ok(h) => h,
@@ -374,7 +372,7 @@ pub extern "C" fn view_block_height() -> *const u8 {
 /// GET /blocks/tip/height
 /// Returns: current chain tip height as decimal string
 #[no_mangle]
-pub extern "C" fn view_tip_height() -> *const u8 {
+pub extern "C" fn tipheight() -> *const u8 {
     let height = host::get(keys::TIP_KEY)
         .and_then(|b| {
             if b.len() >= 4 {
@@ -390,7 +388,7 @@ pub extern "C" fn view_tip_height() -> *const u8 {
 /// GET /blocks/tip/hash
 /// Returns: current chain tip block hash hex string
 #[no_mangle]
-pub extern "C" fn view_tip_hash() -> *const u8 {
+pub extern "C" fn tiphash() -> *const u8 {
     match host::get(keys::TIP_HASH_KEY) {
         Some(hash_bytes) => {
             let mut hash = [0u8; 32];
@@ -403,11 +401,11 @@ pub extern "C" fn view_tip_hash() -> *const u8 {
     }
 }
 
-/// GET /address/:address/utxo (via scripthash)
+/// GET /scripthash/:hash/utxo
 /// Input: script_hash hex string (SHA-256 of scriptPubKey)
 /// Returns: JSON array of UTXO objects
 #[no_mangle]
-pub extern "C" fn view_utxos_by_scripthash() -> *const u8 {
+pub extern "C" fn utxosbyscripthash() -> *const u8 {
     let input = input_string();
     let sh = match decode_hash(input.trim()) {
         Some(h) => h,
@@ -416,7 +414,7 @@ pub extern "C" fn view_utxos_by_scripthash() -> *const u8 {
 
     // Scan UTXOs for this script hash.
     // The UTXO key prefix is: U + script_hash(32)
-    let prefix_key = keys::address_key(&sh);
+    let _prefix_key = keys::address_key(&sh);
     // We'd need prefix iteration from the host, which isn't available.
     // For now, return what we can from direct lookups.
     // TODO: Implement prefix scan in host ABI or store UTXO list per address.

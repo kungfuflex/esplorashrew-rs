@@ -6,7 +6,7 @@ license = "MIT"
 description = "Esplora-compatible indexer module for qubitcoind secondary indexer runtime"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 prost = "0.12"
@@ -16,6 +16,10 @@ sha2 = "0.10"
 
 [build-dependencies]
 prost-build = "0.12"
+
+# Tests must run single-threaded (global mutable state, same as metashrew-core).
+# Use: cargo test -- --test-threads=1
+# Or set RUST_TEST_THREADS=1
 
 [profile.release]
 opt-level = "z"

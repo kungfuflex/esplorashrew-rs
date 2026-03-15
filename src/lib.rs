@@ -5,12 +5,6 @@
 //! blocks into an Esplora-compatible key-value schema and exposes view functions
 //! that return the same JSON responses as the Blockstream Esplora REST API.
 //!
-//! # Indexed Data
-//!
-//! - Transactions: metadata, raw bytes, spending records
-//! - Blocks: metadata, height-to-hash mapping, transaction lists
-//! - Addresses/ScriptHashes: transaction history, UTXOs
-//!
 //! # View Functions (Esplora API)
 //!
 //! | View Function        | Esplora Endpoint              |
@@ -29,44 +23,30 @@
 //! | `tiphash`           | `GET /blocks/tip/hash`        |
 //! | `utxosbyscripthash` | `GET /scripthash/:hash/utxo`  |
 
-mod block;
-mod host;
-mod indexer;
-mod keys;
-mod types;
-mod views;
+pub mod block;
+pub mod host;
+pub mod indexer;
+pub mod keys;
+pub mod types;
+pub mod views;
 
-mod proto {
+#[cfg(test)]
+mod tests;
+
+pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/metashrew.rs"));
 }
 
 use prost::Message;
 
-/// Entry point called by the qubitcoind WASM runtime for each new block.
+/// Index a block: parse it, generate KV pairs, flush to storage.
 ///
-/// Input format: `[height_le32 (4 bytes)][raw_block_data]`
-#[no_mangle]
-pub extern "C" fn _start() {
-    let input = host::load_input();
-
-    if input.len() < 4 {
-        host::log("esplorashrew: input too short");
-        // Still need to flush (empty) to signal completion.
-        flush_empty();
-        return;
-    }
-
-    // Parse height from first 4 bytes.
-    let height = u32::from_le_bytes([input[0], input[1], input[2], input[3]]);
-    let block_data = &input[4..];
-
-    // Parse the block.
+/// This is the core indexing function, callable both from `_start()` (WASM)
+/// and from tests (native).
+pub fn index_block(height: u32, block_data: &[u8]) {
     let parsed_block = block::parse_block(block_data);
-
-    // Index the block.
     let pairs = indexer::index_block(height, &parsed_block, block_data.len() as u32);
 
-    // Encode as KeyValueFlush protobuf and flush.
     let mut list = Vec::with_capacity(pairs.len() * 2);
     for (key, value) in &pairs {
         list.push(key.clone());
@@ -78,6 +58,26 @@ pub extern "C" fn _start() {
     flush_msg.encode(&mut buf).unwrap();
 
     host::flush(&buf);
+}
+
+/// Entry point called by the qubitcoind WASM runtime for each new block.
+///
+/// Input format: `[height_le32 (4 bytes)][raw_block_data]`
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "C" fn _start() {
+    let input = host::load_input();
+
+    if input.len() < 4 {
+        host::log("esplorashrew: input too short");
+        flush_empty();
+        return;
+    }
+
+    let height = u32::from_le_bytes([input[0], input[1], input[2], input[3]]);
+    let block_data = &input[4..];
+
+    index_block(height, block_data);
 }
 
 /// Flush an empty KeyValueFlush (signals completion with no state changes).

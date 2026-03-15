@@ -8,7 +8,7 @@ Replaces the need for a separate Electrs/Esplora instance by running the indexer
 
 This crate compiles to `wasm32-unknown-unknown` and implements the metashrew indexer ABI:
 - **`_start()`** — called for each new block, indexes transactions, UTXOs, addresses
-- **`view_*`** — read-only query functions matching the Esplora REST API
+- **View functions** — read-only query functions matching the Esplora REST API
 
 ## Supported Endpoints
 
@@ -38,6 +38,22 @@ cargo build
 rustup target add wasm32-unknown-unknown
 cargo build --release --target wasm32-unknown-unknown
 ```
+
+## Testing
+
+Tests follow the [alkanes-rs](https://github.com/kungfuflex/alkanes-rs) / metashrew-core pattern: an in-memory `CACHE` HashMap replaces the host extern functions in native test builds, so the full indexer pipeline (block parsing, indexing, view queries) runs natively without a WASM runtime.
+
+```bash
+cargo test -- --test-threads=1
+```
+
+Single-threaded execution is required because the in-memory cache uses global mutable state (same constraint as `metashrew-core`).
+
+### Test coverage
+
+- **Block parser** (12 tests) — coinbase/spending tx parsing, header parsing, txid/hash computation, compact size encoding, weight calculation
+- **Indexer** (8 tests) — block/tx metadata, raw tx storage, block txid lists, spend records, UTXO creation, address-tx mappings, multi-block tip progression
+- **View functions** (17 tests) — all 13 view functions tested end-to-end including not-found cases and a full multi-block integration test
 
 ## Usage with qubitcoind
 

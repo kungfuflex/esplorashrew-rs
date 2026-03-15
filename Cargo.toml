@@ -1,0 +1,23 @@
+[package]
+name = "esplorashrew"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Esplora-compatible indexer module for qubitcoind secondary indexer runtime"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+prost = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[build-dependencies]
+prost-build = "0.12"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

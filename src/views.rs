@@ -347,12 +347,63 @@ view_fn! {
 
 view_fn! {
     /// GET /scripthash/:hash/utxo
+    ///
+    /// Returns unspent transaction outputs for the given script hash.
+    /// Iterates the UTXO index and filters out spent outputs.
     fn utxosbyscripthash() -> *const u8 {
         let input = input_string();
-        let _sh = match decode_hash(input.trim()) {
+        let sh = match decode_hash(input.trim()) {
             Some(h) => h,
             None => return json_response(&serde_json::json!({"error": "invalid script hash"})),
         };
-        json_response(&serde_json::json!([]))
+
+        // Read UTXO count for this script hash
+        let count_key = crate::keys::utxo_count_key(&sh);
+        let count = host::get(&count_key)
+            .and_then(|b| if b.len() >= 4 {
+                Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            } else { None })
+            .unwrap_or(0);
+
+        let mut utxos = Vec::new();
+
+        for i in 0..count {
+            let idx_key = crate::keys::utxo_idx_key(&sh, i);
+            let idx_value = match host::get(&idx_key) {
+                Some(v) if v.len() == 36 => v,
+                _ => continue,
+            };
+
+            // Parse txid (32 bytes) + vout (4 bytes BE)
+            let mut txid = [0u8; 32];
+            txid.copy_from_slice(&idx_value[0..32]);
+            let vout = u32::from_be_bytes([idx_value[32], idx_value[33], idx_value[34], idx_value[35]]);
+
+            // Check if this output is spent
+            let spend = crate::keys::spend_key(&txid, vout);
+            if host::get_len(&spend) > 0 {
+                continue; // Spent — skip
+            }
+
+            // Read the UTXO entry
+            let utxo_key = crate::keys::utxo_key(&sh, &txid, vout);
+            if let Some(utxo_bytes) = host::get(&utxo_key) {
+                if let Ok(entry) = serde_json::from_slice::<crate::types::UtxoEntry>(&utxo_bytes) {
+                    utxos.push(serde_json::json!({
+                        "txid": entry.txid,
+                        "vout": entry.vout,
+                        "value": entry.value,
+                        "status": {
+                            "confirmed": true,
+                            "block_height": entry.block_height,
+                            "block_hash": entry.block_hash,
+                            "block_time": entry.block_time,
+                        }
+                    }));
+                }
+            }
+        }
+
+        json_response(&serde_json::json!(utxos))
     }
 }

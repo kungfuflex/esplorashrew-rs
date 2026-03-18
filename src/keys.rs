@@ -118,3 +118,26 @@ pub fn spend_key(txid: &[u8; 32], vout: u32) -> Vec<u8> {
     k.extend_from_slice(&vout.to_be_bytes());
     k
 }
+
+/// utxo_count:<script_hash_32> -> count (u32 LE)
+/// Tracks how many UTXO entries exist for a given script hash.
+pub const UTXO_COUNT_PREFIX: u8 = b'N';
+
+/// utxo_idx:<script_hash_32>:<index_u32_be> -> utxo_key suffix (txid_32 + vout_be4)
+/// Maps (script_hash, index) to the specific UTXO, enabling iteration.
+pub const UTXO_IDX_PREFIX: u8 = b'X';
+
+pub fn utxo_count_key(script_hash: &[u8; 32]) -> Vec<u8> {
+    let mut k = Vec::with_capacity(33);
+    k.push(UTXO_COUNT_PREFIX);
+    k.extend_from_slice(script_hash);
+    k
+}
+
+pub fn utxo_idx_key(script_hash: &[u8; 32], index: u32) -> Vec<u8> {
+    let mut k = Vec::with_capacity(37);
+    k.push(UTXO_IDX_PREFIX);
+    k.extend_from_slice(script_hash);
+    k.extend_from_slice(&index.to_be_bytes());
+    k
+}

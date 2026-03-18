@@ -13,6 +13,8 @@ pub fn index_block(
     block_raw_size: u32,
 ) -> Vec<(Vec<u8>, Vec<u8>)> {
     let mut pairs = Vec::new();
+    // Track UTXO counts per script hash for enumeration index
+    let mut utxo_counts: std::collections::HashMap<[u8; 32], u32> = std::collections::HashMap::new();
 
     let block_hash = block.header.hash;
     let block_hash_hex = block::to_hex_rev(&block_hash);
@@ -129,12 +131,40 @@ pub fn index_block(
                 utxo_bytes,
             ));
 
+            // Append to the script hash's UTXO index for enumeration.
+            // Read current count, store index → (txid, vout), bump count.
+            let count_key = keys::utxo_count_key(&sh);
+            let current_count = utxo_counts.entry(sh).or_insert_with(|| {
+                // Read from storage on first access for this script hash
+                crate::host::get(&count_key)
+                    .and_then(|b| if b.len() >= 4 {
+                        Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    } else { None })
+                    .unwrap_or(0)
+            });
+
+            // Store index entry: maps (script_hash, index) → (txid ++ vout_be)
+            let mut idx_value = Vec::with_capacity(36);
+            idx_value.extend_from_slice(&txid);
+            idx_value.extend_from_slice(&(vout as u32).to_be_bytes());
+            pairs.push((
+                keys::utxo_idx_key(&sh, *current_count),
+                idx_value,
+            ));
+
+            *current_count += 1;
+
             // Store address -> tx mapping.
             pairs.push((
                 keys::address_tx_key(&sh, height, tx_index as u16),
                 txid.to_vec(),
             ));
         }
+    }
+
+    // Flush updated UTXO counts for each script hash
+    for (sh, count) in &utxo_counts {
+        pairs.push((keys::utxo_count_key(sh), count.to_le_bytes().to_vec()));
     }
 
     pairs

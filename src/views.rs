@@ -30,7 +30,9 @@ macro_rules! view_fn {
 
 fn input_string() -> String {
     let data = host::load_input();
-    String::from_utf8_lossy(&data).to_string()
+    // Skip 4-byte height prefix (metashrew ABI: [height_le32 ++ payload])
+    let payload = if data.len() > 4 { &data[4..] } else { &data };
+    String::from_utf8_lossy(payload).to_string()
 }
 
 fn json_response(value: &serde_json::Value) -> *const u8 {

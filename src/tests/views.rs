@@ -7,7 +7,10 @@ use crate::tests::helpers;
 /// Helper: call a view function by setting input and invoking the fn.
 /// Returns the raw bytes from the ArrayBuffer pointer.
 fn call_view(view_fn: fn() -> *const u8, input: &[u8]) -> Vec<u8> {
-    host::set_input(input.to_vec());
+    // Prepend 4-byte height prefix (metashrew ABI: [height_le32 ++ payload])
+    let mut prefixed = vec![0u8; 4]; // height = 0
+    prefixed.extend_from_slice(input);
+    host::set_input(prefixed);
     let ptr = view_fn();
     // Read ArrayBuffer: length at (ptr-4), data at ptr.
     unsafe {
@@ -279,6 +282,203 @@ fn test_txoutspend_spent() {
     let result = call_view_json(crate::views::txoutspend, &input);
     assert_eq!(result["spent"], true);
     assert!(result["txid"].is_string());
+}
+
+// ---- utxosbyscripthash ----
+
+#[test]
+fn test_utxosbyscripthash_coinbase() {
+    helpers::clear();
+
+    // Index a block with a coinbase paying to OP_TRUE (0x51)
+    let block_data = helpers::build_test_block(0);
+    crate::index_block(0, &block_data);
+    let parsed = block::parse_block(&block_data);
+
+    // Compute the script hash for OP_TRUE
+    let script_pubkey = &[0x51u8];
+    let sh = block::script_hash(script_pubkey);
+
+    // The view expects the script hash as reversed hex (display order)
+    let sh_hex = to_hex_rev(&sh);
+
+    // Query UTXOs
+    let result = call_view_json(crate::views::utxosbyscripthash, &sh_hex);
+
+    // Should be an array with exactly 1 UTXO (the coinbase output)
+    let utxos = result.as_array().expect("expected JSON array");
+    assert_eq!(utxos.len(), 1, "expected 1 UTXO, got {}: {:?}", utxos.len(), result);
+    assert_eq!(utxos[0]["value"], 50_0000_0000u64);
+    assert_eq!(utxos[0]["vout"], 0);
+
+    let expected_txid = to_hex_rev(&parsed.transactions[0].txid);
+    assert_eq!(utxos[0]["txid"], expected_txid);
+    assert_eq!(utxos[0]["status"]["confirmed"], true);
+    assert_eq!(utxos[0]["status"]["block_height"], 0);
+}
+
+#[test]
+fn test_utxosbyscripthash_spent() {
+    helpers::clear();
+
+    // Block 0: coinbase paying to OP_TRUE
+    let block0 = helpers::build_test_block(0);
+    crate::index_block(0, &block0);
+    let parsed0 = block::parse_block(&block0);
+    let coinbase_txid = parsed0.transactions[0].txid;
+
+    // Block 1: spend the coinbase, create new output to OP_TRUE
+    let block1 = helpers::build_test_block_with_spend(
+        1,
+        &parsed0.header.hash,
+        &coinbase_txid,
+        0,
+        49_0000_0000,
+        &[0x51], // OP_TRUE output
+    );
+    crate::index_block(1, &block1);
+    let parsed1 = block::parse_block(&block1);
+
+    // Query UTXOs for OP_TRUE script hash
+    let sh = block::script_hash(&[0x51u8]);
+    let sh_hex = to_hex_rev(&sh);
+    let result = call_view_json(crate::views::utxosbyscripthash, &sh_hex);
+
+    let utxos = result.as_array().expect("expected JSON array");
+    // The coinbase from block0 is spent. Block1 creates:
+    // - coinbase output (to OP_TRUE)
+    // - spending tx output (to OP_TRUE)
+    // So we should have 2 unspent UTXOs (block1 coinbase + block1 spend tx)
+    assert!(utxos.len() >= 2, "expected at least 2 UTXOs, got {}: {:?}", utxos.len(), result);
+
+    // None of them should be the spent coinbase from block 0
+    let coinbase0_txid_hex = to_hex_rev(&coinbase_txid);
+    for utxo in utxos {
+        assert_ne!(utxo["txid"], coinbase0_txid_hex,
+            "spent coinbase from block 0 should not appear in UTXO set");
+    }
+}
+
+#[test]
+fn test_utxosbyscripthash_empty() {
+    helpers::clear();
+
+    // Index a block but query a different script hash
+    let block = helpers::build_test_block(0);
+    crate::index_block(0, &block);
+
+    // Use a P2WPKH-like script that won't match the OP_TRUE coinbase
+    let sh = block::script_hash(&[0x00, 0x14, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                                    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12,
+                                    0x13, 0x14]);
+    let sh_hex = to_hex_rev(&sh);
+    let result = call_view_json(crate::views::utxosbyscripthash, &sh_hex);
+
+    let utxos = result.as_array().expect("expected JSON array");
+    assert_eq!(utxos.len(), 0, "expected 0 UTXOs for unknown script");
+}
+
+#[test]
+fn test_utxosbyscripthash_via_hex_encoded_input() {
+    // Simulates the qubitcoind secondaryview path:
+    // 1. Address → scriptPubKey → SHA256 → script_hash
+    // 2. to_hex_rev(script_hash) → reversed hex string
+    // 3. hex::encode(reversed_hex_string.as_bytes()) → hex-encoded ASCII
+    // 4. qubitcoind hex-decodes → raw ASCII bytes = the reversed hex string
+    // 5. View function receives the reversed hex string via load_input()
+
+    helpers::clear();
+
+    let block_data = helpers::build_test_block(0);
+    crate::index_block(0, &block_data);
+
+    // Compute script hash for OP_TRUE (same as coinbase)
+    let script_pubkey = &[0x51u8];
+    let sh = block::script_hash(script_pubkey);
+    let sh_hex = to_hex_rev(&sh);
+
+    // This is what the CLI's translate_esplora_for_qubitcoin does:
+    // hex::encode(sh_hex.as_bytes()) — double-hex-encoding the string
+    let hex_encoded = crate::block::to_hex(sh_hex.as_bytes());
+
+    // Simulate qubitcoind's secondaryview: it hex-decodes the input
+    let decoded_bytes = (0..hex_encoded.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex_encoded[i..i+2], 16).unwrap())
+        .collect::<Vec<u8>>();
+    let decoded_string = String::from_utf8(decoded_bytes).unwrap();
+
+    // This should equal our original sh_hex
+    assert_eq!(decoded_string, sh_hex,
+        "hex roundtrip should preserve the script hash string");
+
+    // And querying with it should work
+    let result = call_view_json(crate::views::utxosbyscripthash, &decoded_string);
+    let utxos = result.as_array().expect("expected JSON array");
+    assert_eq!(utxos.len(), 1, "expected 1 UTXO via hex-encoded path");
+}
+
+#[test]
+fn test_utxosbyscripthash_p2tr_output() {
+    helpers::clear();
+
+    // Simulate a coinbase with P2TR output (like qubitcoind generatetoaddress)
+    // P2TR scriptPubKey: OP_1 (0x51) PUSH32 (0x20) <32-byte-x-only-pubkey>
+    let fake_pubkey = [0xabu8; 32];
+    let mut p2tr_script = Vec::with_capacity(34);
+    p2tr_script.push(0x51); // OP_1
+    p2tr_script.push(0x20); // PUSH 32 bytes
+    p2tr_script.extend_from_slice(&fake_pubkey);
+
+    // Build a coinbase tx paying to this P2TR script
+    let coinbase = helpers::build_spending_tx(
+        &[0u8; 32],  // null prev txid (coinbase)
+        0xFFFFFFFF,
+        50_0000_0000,
+        &p2tr_script,
+    );
+
+    // Wait — build_spending_tx doesn't set coinbase correctly.
+    // Use build_coinbase_tx but with a custom script. Let me build manually.
+    let mut tx = Vec::new();
+    tx.extend_from_slice(&1i32.to_le_bytes()); // version
+    tx.push(1u8); // 1 input
+    tx.extend_from_slice(&[0u8; 32]); // null txid
+    tx.extend_from_slice(&0xFFFFFFFFu32.to_le_bytes()); // coinbase vout
+    // scriptsig: BIP34 height
+    let height_bytes = 0u32.to_le_bytes();
+    tx.push(5u8); // scriptsig len
+    tx.push(4u8); // push 4 bytes
+    tx.extend_from_slice(&height_bytes);
+    tx.extend_from_slice(&0xFFFFFFFFu32.to_le_bytes()); // sequence
+    tx.push(1u8); // 1 output
+    tx.extend_from_slice(&50_0000_0000u64.to_le_bytes()); // value
+    // P2TR scriptPubKey
+    tx.push(p2tr_script.len() as u8); // scriptPubKey length
+    tx.extend_from_slice(&p2tr_script);
+    tx.extend_from_slice(&0u32.to_le_bytes()); // locktime
+
+    let block = helpers::build_raw_block(
+        0x20000000,
+        &[0u8; 32],
+        1231006505,
+        0x1d00ffff,
+        0,
+        &[tx],
+    );
+    crate::index_block(0, &block);
+
+    // Compute script hash for the P2TR scriptPubKey
+    let sh = block::script_hash(&p2tr_script);
+    let sh_hex = to_hex_rev(&sh);
+    println!("P2TR script: {}", block::to_hex(&p2tr_script));
+    println!("Script hash (raw): {}", block::to_hex(&sh));
+    println!("Script hash (reversed hex for query): {}", sh_hex);
+
+    let result = call_view_json(crate::views::utxosbyscripthash, &sh_hex);
+    let utxos = result.as_array().expect("expected JSON array");
+    assert_eq!(utxos.len(), 1, "expected 1 UTXO for P2TR address, got: {:?}", result);
+    assert_eq!(utxos[0]["value"], 50_0000_0000u64);
 }
 
 // ---- end-to-end: index multiple blocks, query everything ----
